@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hızlı QR Transfer - Emir</title>
+    <title>Dengeli QR Transfer - Emir</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
@@ -17,8 +17,9 @@
     </style>
 </head>
 <body>
-    <h2>⚡ Hızlı QR Transfer</h2>
+    <h2>⚡ Dengeli QR Transfer</h2>
     <div class="container">
+        <!-- GÖNDERİCİ -->
         <div class="panel">
             <h3>📤 Gönderici</h3>
             <input type="file" id="fileInput">
@@ -27,6 +28,7 @@
             <p id="sendProgress">Bekleniyor...</p>
         </div>
         
+        <!-- ALICI -->
         <div class="panel">
             <h3>📥 Alıcı</h3>
             <button onclick="startScanner()">📷 Kamerayı Aç</button>
@@ -57,7 +59,6 @@
                 const base64Data = event.target.result;
                 const compressedData = LZString.compressToBase64(base64Data);
                 
-                // Kolay taranması için parça boyutunu sade tutuyoruz
                 const chunkSize = 300; 
                 chunks = compressedData.match(new RegExp('.{1,' + chunkSize + '}', 'g')).map((chunk, i, arr) => `${i}/${arr.length}|${chunk}`);
                 
@@ -71,18 +72,18 @@
             startBtn.style.display = "none";
             clearInterval(playInterval);
             
-            // 1) İlk QR kodu aç ve telefonun odaklanması için 1 saniye bekle
+            // 1) Kameranın odaklanması için 1 saniye bekle
             currentChunk = 0;
             qr.value = chunks[0];
             sendProgress.innerText = `🎯 Odaklanılıyor: 1 / ${chunks.length}`;
 
             setTimeout(() => {
-                // 2) 1 saniye sonra ışık hızına geç (~30 FPS)
+                // 2) 1 saniye sonra dengeli hıza geç (150ms = ~6-7 FPS)
                 playInterval = setInterval(() => {
                     currentChunk = (currentChunk + 1) % chunks.length;
                     qr.value = chunks[currentChunk];
                     sendProgress.innerText = `⚡ Aktarılıyor: ${currentChunk + 1} / ${chunks.length}`;
-                }, 33); // 33ms
+                }, 150); 
             }, 1000);
         });
 
