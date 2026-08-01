@@ -13,7 +13,7 @@
         .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
         .tab-btn { background: #333; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 5px; font-weight: bold; }
         .tab-btn.active { background: var(--primary); color: #000; }
-        .panel { background: var(--panel); border: 1px solid #333; border-radius: 10px; padding: 20px; width: 100%; max-width: 400px; display: none; text-align: center; }
+        .panel { background: var(--panel); border: 1px solid #333; border-radius: 10px; padding: 20px; width: 100%; max-width: 450px; display: none; text-align: center; }
         .panel.active { display: block; }
         button.action-btn { background: var(--primary); color: #000; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 5px; margin-top: 15px; width: 100%; }
         canvas { max-width: 100%; background: #000; border-radius: 5px; margin-top: 15px; }
@@ -36,13 +36,17 @@
     <div id="sender" class="panel active">
         <input type="file" id="fileInput" class="action-btn">
         
-        <div class="controls" id="speedControl" style="display: none;">
+        <div class="controls" id="settings" style="display: none;">
             <label>Aktarım Hızı: <span id="fpsValue">5</span> FPS</label>
             <input type="range" id="fpsSlider" min="1" max="30" value="5">
+            
+            <label style="margin-top:10px; display:block;">Paket Boyutu: <span id="chunkValue">1500</span> Byte</label>
+            <input type="range" id="chunkSlider" min="300" max="2500" step="100" value="1500">
         </div>
 
         <button id="startBtn" class="action-btn" style="display:none;">▶️ Aktarımı Başlat</button>
-        <canvas id="qrCanvas" width="300" height="300" style="display:none;"></canvas>
+        <!-- Canvas daha yoğun veriler için 450px yapıldı -->
+        <canvas id="qrCanvas" width="450" height="450" style="display:none;"></canvas>
         <p id="sendProgress" class="progress-text">Dosya Seçin...</p>
     </div>
 
@@ -50,12 +54,11 @@
     <div id="receiver" class="panel">
         <button onclick="Receiver.start()" class="action-btn">📷 Kamerayı Aç</button>
         <video id="video" playsinline></video>
-        <canvas id="scanCanvas" width="300" height="300" style="display:none;"></canvas>
+        <canvas id="scanCanvas" width="450" height="450" style="display:none;"></canvas>
         <p id="receiveProgress" class="progress-text">Taranan Veri: 0%</p>
     </div>
 
     <script>
-        // --- ARAYÜZ KONTROLÜ ---
         function switchTab(tabId) {
             document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -63,21 +66,29 @@
             event.target.classList.add('active');
         }
 
-        // --- GÖNDERİCİ MODÜLÜ ---
         const Sender = {
             chunks: [],
             current: 0,
             isPlaying: false,
             fps: 5,
+            chunkSize: 1500, // Varsayılan paket boyutu artırıldı
+            base64Data: "",
             lastFrameTime: 0,
-            qr: new QRious({ element: document.getElementById('qrCanvas'), size: 300, level: 'L' }),
+            qr: new QRious({ element: document.getElementById('qrCanvas'), size: 450, level: 'L' }),
 
             init() {
                 document.getElementById('fileInput').addEventListener('change', this.handleFile.bind(this));
                 document.getElementById('startBtn').addEventListener('click', this.togglePlay.bind(this));
+                
                 document.getElementById('fpsSlider').addEventListener('input', (e) => {
                     this.fps = e.target.value;
                     document.getElementById('fpsValue').innerText = this.fps;
+                });
+
+                document.getElementById('chunkSlider').addEventListener('input', (e) => {
+                    this.chunkSize = parseInt(e.target.value);
+                    document.getElementById('chunkValue').innerText = this.chunkSize;
+                    if (this.base64Data) this.processData();
                 });
             },
 
@@ -86,15 +97,18 @@
                 if (!file) return;
                 const reader = new FileReader();
                 reader.onload = (event) => {
-                    const compressed = LZString.compressToBase64(event.target.result);
-                    const chunkSize = 300;
-                    this.chunks = compressed.match(new RegExp('.{1,' + chunkSize + '}', 'g')).map((c, i, a) => `${i}/${a.length}|${c}`);
-                    
+                    this.base64Data = LZString.compressToBase64(event.target.result);
+                    this.processData();
                     document.getElementById('startBtn').style.display = "block";
-                    document.getElementById('speedControl').style.display = "block";
-                    document.getElementById('sendProgress').innerText = `Hazır! (${this.chunks.length} Parça)`;
+                    document.getElementById('settings').style.display = "block";
                 };
                 reader.readAsDataURL(file);
+            },
+            
+            processData() {
+                this.chunks = this.base64Data.match(new RegExp('.{1,' + this.chunkSize + '}', 'g')).map((c, i, a) => `${i}/${a.length}|${c}`);
+                document.getElementById('sendProgress').innerText = `Hazır! (${this.chunks.length} Parça)`;
+                this.current = 0;
             },
 
             togglePlay() {
@@ -111,8 +125,6 @@
 
             loop(timestamp) {
                 if (!this.isPlaying) return;
-                
-                // FPS kontrolü
                 if (timestamp - this.lastFrameTime >= (1000 / this.fps)) {
                     this.qr.value = this.chunks[this.current];
                     document.getElementById('sendProgress').innerText = `Aktarılıyor: ${this.current + 1} / ${this.chunks.length}`;
@@ -123,7 +135,6 @@
             }
         };
 
-        // --- ALICI MODÜLÜ ---
         const Receiver = {
             video: document.getElementById('video'),
             canvas: document.getElementById('scanCanvas'),
@@ -132,6 +143,7 @@
             dataMap: {},
             downloaded: 0,
             total: 0,
+            currentSessionTotal: null, 
 
             start() {
                 navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", frameRate: { ideal: 60 } } })
@@ -160,7 +172,16 @@
                 
                 const meta = parts[0].split('/');
                 const index = parseInt(meta[0]);
-                this.total = parseInt(meta[1]);
+                const newTotal = parseInt(meta[1]);
+                
+                // Yeni bir dosya transferi başladıysa eski verileri temizle
+                if (this.currentSessionTotal !== newTotal) {
+                    this.dataMap = {};
+                    this.downloaded = 0;
+                    this.currentSessionTotal = newTotal;
+                }
+
+                this.total = newTotal;
                 const chunkData = parts[1];
                 
                 if (!this.dataMap[index]) {
@@ -190,7 +211,6 @@
             }
         };
 
-        // Sistemi Başlat
         Sender.init();
     </script>
 </body>
