@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>60 FPS QR Transfer - Emir</title>
+    <title>Sıkıştırılmış Tek QR - Emir</title>
+    <!-- QR, Okuyucu ve Sıkıştırma Kütüphaneleri -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; text-align: center; background: #121212; color: #fff; padding: 20px; }
         .container { display: flex; flex-direction: column; gap: 20px; align-items: center; }
@@ -13,62 +15,60 @@
         button { background: #00ff88; color: #000; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 5px; margin-top: 10px;}
         canvas { max-width: 100%; background: #000; border-radius: 5px; margin-top:10px; }
         video { display: none; }
+        #warning { color: #ff4444; font-weight: bold; display: none; }
     </style>
 </head>
 <body>
-    <h2>⚡ 60 FPS QR Transfer</h2>
+    <h2>⚡ Yüksek Kapasiteli Tek QR</h2>
     <div class="container">
         <!-- GÖNDERİCİ -->
         <div class="panel">
             <h3>📤 Gönderici</h3>
             <input type="file" id="fileInput">
-            <button id="startBtn" style="display:none;">▶️ Başlat</button>
-            <canvas id="qrCanvas" width="250" height="250" style="display:none;"></canvas>
-            <p id="sendProgress">Bekleniyor...</p>
+            <p id="warning">⚠️ Dosya tek QR için çok büyük!</p>
+            <canvas id="qrCanvas" width="300" height="300" style="display:none;"></canvas>
         </div>
+        
         <!-- ALICI -->
         <div class="panel">
             <h3>📥 Alıcı</h3>
-            <button onclick="startScanner()">📷 Kamerayı Aç (60 FPS)</button>
+            <button onclick="startScanner()">📷 Kamerayı Aç</button>
             <video id="video" playsinline></video>
             <canvas id="scanCanvas" width="300" height="300" style="display:none;"></canvas>
-            <p id="receiveProgress">Taranan Veri: 0%</p>
+            <p id="receiveProgress">Bekleniyor...</p>
         </div>
     </div>
 
     <script>
         // --- GÖNDERİCİ ---
         const fileInput = document.getElementById('fileInput');
-        const startBtn = document.getElementById('startBtn');
         const qrCanvas = document.getElementById('qrCanvas');
-        const sendProgress = document.getElementById('sendProgress');
-        let qr = new QRious({ element: qrCanvas, size: 250 });
-        let chunks = [];
-        let currentChunk = 0;
-        let playInterval;
+        const warning = document.getElementById('warning');
+        
+        // Level 'L' ile daha az detaylı/sade bir QR oluşturulur
+        let qr = new QRious({ element: qrCanvas, size: 300, level: 'L' });
 
         fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
             const reader = new FileReader();
+            
             reader.onload = function(event) {
                 const base64Data = event.target.result;
-                chunks = base64Data.match(/.{1,100}/g).map((chunk, i, arr) => `${i}/${arr.length}|${chunk}`);
-                startBtn.style.display = "inline-block"; // Dosya seçilince başlat butonunu göster
+                // Veriyi sıkıştırıyoruz
+                const compressedData = LZString.compressToBase64(base64Data);
+                
+                // Standart QR kapasite kontrolü (yaklaşık 2900 karakter)
+                if (compressedData.length > 2900) {
+                    warning.style.display = "block";
+                    qrCanvas.style.display = "none";
+                } else {
+                    warning.style.display = "none";
+                    qr.value = compressedData;
+                    qrCanvas.style.display = "block";
+                }
             };
             reader.readAsDataURL(file);
-        });
-
-        startBtn.addEventListener('click', () => {
-            qrCanvas.style.display = "block";
-            startBtn.style.display = "none";
-            clearInterval(playInterval);
-            // 60 FPS = 1000ms / 60 ≈ 16.6ms
-            playInterval = setInterval(() => {
-                qr.value = chunks[currentChunk];
-                sendProgress.innerText = `Oynatılıyor: Parça ${currentChunk + 1} / ${chunks.length} (60 FPS)`;
-                currentChunk = (currentChunk + 1) % chunks.length;
-            }, 16); 
         });
 
         // --- ALICI ---
@@ -76,12 +76,9 @@
         const scanCanvas = document.getElementById('scanCanvas');
         const ctx = scanCanvas.getContext('2d');
         const receiveProgress = document.getElementById('receiveProgress');
-        let receivedChunks = new Set();
-        let totalChunks = 0;
 
         function startScanner() {
-            // Kameradan ideal 60 FPS talep ediliyor
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", frameRate: { ideal: 60 } } }).then(function(stream) {
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(function(stream) {
                 video.srcObject = stream;
                 video.setAttribute("playsinline", true);
                 video.play();
@@ -94,28 +91,20 @@
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
                 ctx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
                 const imageData = ctx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
+                // dontInvert hızı artırır
                 const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
 
-                if (code) processQR(code.data);
+                if (code) {
+                    // Taranan veriyi çöz
+                    const decompressed = LZString.decompressFromBase64(code.data);
+                    if (decompressed) {
+                        receiveProgress.innerText = "✅ Dosya Başarıyla Okundu!";
+                        receiveProgress.style.color = "#00ff88";
+                        // Burada 'decompressed' değişkeni orijinal dosyandır.
+                    }
+                }
             }
-            // 60Hz ekran yenilemesiyle senkronize döngü
             requestAnimationFrame(tick); 
-        }
-
-        function processQR(data) {
-            const parts = data.split('|');
-            if (parts.length < 2) return;
-            const meta = parts[0].split('/');
-            totalChunks = parseInt(meta[1]);
-            receivedChunks.add(data);
-            
-            const percentage = Math.round((receivedChunks.size / totalChunks) * 100);
-            receiveProgress.innerText = `İndiriliyor: ${percentage}% (${receivedChunks.size}/${totalChunks})`;
-
-            if (receivedChunks.size === totalChunks) {
-                receiveProgress.innerText = "✅ Transfer Tamamlandı!";
-                receiveProgress.style.color = "#00ff88";
-            }
         }
     </script>
 </body>
