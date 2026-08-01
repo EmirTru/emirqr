@@ -32,7 +32,6 @@
         <button class="tab-btn" onclick="switchTab('receiver')">📥 Alıcı</button>
     </div>
 
-    <!-- GÖNDERİCİ PANELİ -->
     <div id="sender" class="panel active">
         <input type="file" id="fileInput" class="action-btn">
         
@@ -45,12 +44,10 @@
         </div>
 
         <button id="startBtn" class="action-btn" style="display:none;">▶️ Aktarımı Başlat</button>
-        <!-- Canvas daha yoğun veriler için 450px yapıldı -->
         <canvas id="qrCanvas" width="450" height="450" style="display:none;"></canvas>
         <p id="sendProgress" class="progress-text">Dosya Seçin...</p>
     </div>
 
-    <!-- ALICI PANELİ -->
     <div id="receiver" class="panel">
         <button onclick="Receiver.start()" class="action-btn">📷 Kamerayı Aç</button>
         <video id="video" playsinline></video>
@@ -71,7 +68,7 @@
             current: 0,
             isPlaying: false,
             fps: 5,
-            chunkSize: 1500, // Varsayılan paket boyutu artırıldı
+            chunkSize: 1500,
             base64Data: "",
             lastFrameTime: 0,
             qr: new QRious({ element: document.getElementById('qrCanvas'), size: 450, level: 'L' }),
@@ -174,7 +171,6 @@
                 const index = parseInt(meta[0]);
                 const newTotal = parseInt(meta[1]);
                 
-                // Yeni bir dosya transferi başladıysa eski verileri temizle
                 if (this.currentSessionTotal !== newTotal) {
                     this.dataMap = {};
                     this.downloaded = 0;
@@ -202,8 +198,17 @@
                 
                 const decompressed = LZString.decompressFromBase64(fullData);
                 if (decompressed) {
-                    this.progressEl.innerText = "✅ Dosya Başarıyla Alındı!";
+                    this.progressEl.innerText = "✅ Dosya İndiriliyor!";
                     this.progressEl.style.color = "#00ff88";
+                    
+                    // OTOMATİK İNDİRME KODU EKLENDİ 📥
+                    const link = document.createElement("a");
+                    link.href = decompressed;
+                    link.download = "QR_Transfer_Dosyasi"; 
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+
                 } else {
                     this.progressEl.innerText = "❌ Çözümleme Hatası!";
                     this.progressEl.style.color = "#ff4444";
