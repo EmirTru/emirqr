@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Çoklu QR Transfer - Emir</title>
+    <title>Hızlı QR Transfer - Emir</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
@@ -17,7 +17,7 @@
     </style>
 </head>
 <body>
-    <h2>⚡ Çoklu QR Transfer</h2>
+    <h2>⚡ Hızlı QR Transfer</h2>
     <div class="container">
         <div class="panel">
             <h3>📤 Gönderici</h3>
@@ -43,7 +43,7 @@
         const qrCanvas = document.getElementById('qrCanvas');
         const sendProgress = document.getElementById('sendProgress');
         
-        let qr = new QRious({ element: qrCanvas, size: 300, level: 'M' });
+        let qr = new QRious({ element: qrCanvas, size: 300, level: 'L' });
         let chunks = [];
         let currentChunk = 0;
         let playInterval;
@@ -57,8 +57,8 @@
                 const base64Data = event.target.result;
                 const compressedData = LZString.compressToBase64(base64Data);
                 
-                // Veriyi 500 karakterlik parçalara böl (Kameranın rahat okuması için)
-                const chunkSize = 500; 
+                // Kolay taranması için parça boyutunu sade tutuyoruz
+                const chunkSize = 300; 
                 chunks = compressedData.match(new RegExp('.{1,' + chunkSize + '}', 'g')).map((chunk, i, arr) => `${i}/${arr.length}|${chunk}`);
                 
                 startBtn.style.display = "inline-block";
@@ -71,12 +71,19 @@
             startBtn.style.display = "none";
             clearInterval(playInterval);
             
-            // Hız 300ms (Yaklaşık 3 FPS)
-            playInterval = setInterval(() => {
-                qr.value = chunks[currentChunk];
-                sendProgress.innerText = `Oynatılıyor: ${currentChunk + 1} / ${chunks.length}`;
-                currentChunk = (currentChunk + 1) % chunks.length;
-            }, 300); 
+            // 1) İlk QR kodu aç ve telefonun odaklanması için 1 saniye bekle
+            currentChunk = 0;
+            qr.value = chunks[0];
+            sendProgress.innerText = `🎯 Odaklanılıyor: 1 / ${chunks.length}`;
+
+            setTimeout(() => {
+                // 2) 1 saniye sonra ışık hızına geç (~30 FPS)
+                playInterval = setInterval(() => {
+                    currentChunk = (currentChunk + 1) % chunks.length;
+                    qr.value = chunks[currentChunk];
+                    sendProgress.innerText = `⚡ Aktarılıyor: ${currentChunk + 1} / ${chunks.length}`;
+                }, 33); // 33ms
+            }, 1000);
         });
 
         // --- ALICI ---
@@ -90,7 +97,9 @@
         let downloadedCount = 0;
 
         function startScanner() {
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(function(stream) {
+            navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "environment", frameRate: { ideal: 60 } } 
+            }).then(function(stream) {
                 video.srcObject = stream;
                 video.setAttribute("playsinline", true);
                 video.play();
@@ -124,7 +133,7 @@
                 downloadedCount++;
                 
                 const percentage = Math.round((downloadedCount / totalChunks) * 100);
-                receiveProgress.innerText = `İndiriliyor: ${percentage}% (${downloadedCount}/${totalChunks})`;
+                receiveProgress.innerText = `İndiriliyor: %${percentage} (${downloadedCount}/${totalChunks})`;
 
                 if (downloadedCount === totalChunks) {
                     receiveProgress.innerText = "✅ Birleştiriliyor...";
