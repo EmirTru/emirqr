@@ -3,42 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Animasyonlu QR Transfer - Emir</title>
+    <title>60 FPS QR Transfer - Emir</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; background: #121212; color: #fff; margin: 0; padding: 20px; }
+        body { font-family: Arial, sans-serif; text-align: center; background: #121212; color: #fff; padding: 20px; }
         .container { display: flex; flex-direction: column; gap: 20px; align-items: center; }
         .panel { border: 2px solid #333; padding: 20px; border-radius: 10px; width: 90%; max-width: 400px; background: #1e1e1e; }
         button { background: #00ff88; color: #000; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 5px; margin-top: 10px;}
-        canvas { max-width: 100%; background: #000; border-radius: 5px; }
+        canvas { max-width: 100%; background: #000; border-radius: 5px; margin-top:10px; }
         video { display: none; }
     </style>
 </head>
 <body>
-
-    <h2>⚡ QR Veri Transferi</h2>
-
+    <h2>⚡ 60 FPS QR Transfer</h2>
     <div class="container">
+        <!-- GÖNDERİCİ -->
         <div class="panel">
             <h3>📤 Gönderici</h3>
             <input type="file" id="fileInput">
-            <canvas id="qrCanvas" width="250" height="250" style="display:none; margin-top:10px;"></canvas>
+            <button id="startBtn" style="display:none;">▶️ Başlat</button>
+            <canvas id="qrCanvas" width="250" height="250" style="display:none;"></canvas>
             <p id="sendProgress">Bekleniyor...</p>
         </div>
-
+        <!-- ALICI -->
         <div class="panel">
-            <h3>📥 Alıcı (Tarayıcı)</h3>
-            <button onclick="startScanner()">Kamerayı Aç</button>
+            <h3>📥 Alıcı</h3>
+            <button onclick="startScanner()">📷 Kamerayı Aç (60 FPS)</button>
             <video id="video" playsinline></video>
-            <canvas id="scanCanvas" width="300" height="300" style="display:none; margin-top:10px;"></canvas>
+            <canvas id="scanCanvas" width="300" height="300" style="display:none;"></canvas>
             <p id="receiveProgress">Taranan Veri: 0%</p>
         </div>
     </div>
 
     <script>
-        // --- GÖNDERİCİ MANTIĞI ---
+        // --- GÖNDERİCİ ---
         const fileInput = document.getElementById('fileInput');
+        const startBtn = document.getElementById('startBtn');
         const qrCanvas = document.getElementById('qrCanvas');
         const sendProgress = document.getElementById('sendProgress');
         let qr = new QRious({ element: qrCanvas, size: 250 });
@@ -52,24 +53,25 @@
             const reader = new FileReader();
             reader.onload = function(event) {
                 const base64Data = event.target.result;
-                // Veriyi 100 karakterlik parçalara bölüyoruz (Gerçek sistemde Fountain Code algoritması buraya gelir)
                 chunks = base64Data.match(/.{1,100}/g).map((chunk, i, arr) => `${i}/${arr.length}|${chunk}`);
-                qrCanvas.style.display = "block";
-                playQR();
+                startBtn.style.display = "inline-block"; // Dosya seçilince başlat butonunu göster
             };
             reader.readAsDataURL(file);
         });
 
-        function playQR() {
+        startBtn.addEventListener('click', () => {
+            qrCanvas.style.display = "block";
+            startBtn.style.display = "none";
             clearInterval(playInterval);
+            // 60 FPS = 1000ms / 60 ≈ 16.6ms
             playInterval = setInterval(() => {
                 qr.value = chunks[currentChunk];
-                sendProgress.innerText = `Oynatılıyor: Parça ${currentChunk + 1} / ${chunks.length}`;
+                sendProgress.innerText = `Oynatılıyor: Parça ${currentChunk + 1} / ${chunks.length} (60 FPS)`;
                 currentChunk = (currentChunk + 1) % chunks.length;
-            }, 100); // 100ms = 10 FPS
-        }
+            }, 16); 
+        });
 
-        // --- ALICI MANTIĞI ---
+        // --- ALICI ---
         const video = document.getElementById('video');
         const scanCanvas = document.getElementById('scanCanvas');
         const ctx = scanCanvas.getContext('2d');
@@ -78,7 +80,8 @@
         let totalChunks = 0;
 
         function startScanner() {
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(function(stream) {
+            // Kameradan ideal 60 FPS talep ediliyor
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", frameRate: { ideal: 60 } } }).then(function(stream) {
                 video.srcObject = stream;
                 video.setAttribute("playsinline", true);
                 video.play();
@@ -93,28 +96,25 @@
                 const imageData = ctx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
                 const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
 
-                if (code) {
-                    processQR(code.data);
-                }
+                if (code) processQR(code.data);
             }
-            requestAnimationFrame(tick); // Daha iyi FPS için requestAnimationFrame
+            // 60Hz ekran yenilemesiyle senkronize döngü
+            requestAnimationFrame(tick); 
         }
 
         function processQR(data) {
             const parts = data.split('|');
             if (parts.length < 2) return;
             const meta = parts[0].split('/');
-            const index = parseInt(meta[0]);
             totalChunks = parseInt(meta[1]);
-            
             receivedChunks.add(data);
+            
             const percentage = Math.round((receivedChunks.size / totalChunks) * 100);
             receiveProgress.innerText = `İndiriliyor: ${percentage}% (${receivedChunks.size}/${totalChunks})`;
 
             if (receivedChunks.size === totalChunks) {
                 receiveProgress.innerText = "✅ Transfer Tamamlandı!";
                 receiveProgress.style.color = "#00ff88";
-                // Dosya birleştirme işlemleri burada yapılır
             }
         }
     </script>
